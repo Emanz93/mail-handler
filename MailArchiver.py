@@ -41,6 +41,7 @@ def authenticate_gmail():
 
 
 def get_messages_with_attachments(service, user_id='me', query='has:attachment'):
+    """ Get the messages that have an attachment and their IDs. """
     try:
         response = service.users().messages().list(userId=user_id, q=query).execute()
         messages = response.get('messages', [])
@@ -51,6 +52,13 @@ def get_messages_with_attachments(service, user_id='me', query='has:attachment')
 
 
 def download_attachment(service, msg_id, output_dir, user_id='me'):
+    """ Download the attachment in the specified folder. If the file has been already present, it skips the download.
+    Currently it fetches only PDFs.
+    Parameters:
+        service: Google auth service.
+        msg_id: String. Message id.
+        output_dir: String. Path of the folder where the attachment is saved.
+    """
     try:
         message = service.users().messages().get(userId=user_id, id=msg_id).execute()
         
@@ -73,7 +81,7 @@ def download_attachment(service, msg_id, output_dir, user_id='me'):
 
 def search_and_get_attachment(service, subject, destination_folder):
     """ Search for the desired messages and save the attachment file in the destination folder. 
-    Paramters:
+    Parameters:
         service: Google auth service.
         subject: String.
         destination_folder: String. Path of the folder.
