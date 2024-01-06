@@ -1,10 +1,16 @@
 import base64
 import os
+from fpdf import FPDF
 import json
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
+from datetime import datetime
+
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 # CONSTANTS
 ## If modifying these SCOPES, delete the file token.json.
@@ -40,7 +46,7 @@ def authenticate_gmail():
     return creds
 
 
-def get_messages_with_attachments(service, user_id='me', query='has:attachment'):
+def get_list_of_messages(service, query, user_id='me'):
     """ Get the messages that have an attachment and their IDs. """
     try:
         response = service.users().messages().list(userId=user_id, q=query).execute()
@@ -79,22 +85,119 @@ def download_attachment(service, msg_id, output_dir, user_id='me'):
         print(f"An error occurred: {e}")
 
 
-def search_and_get_attachment(service, subject, destination_folder):
+def pdf_from_email(service, msg_id, destination_folder, user_id='me'):
+    try:
+        message = service.users().messages().get(userId=user_id, id=msg_id).execute()
+
+        for header in message['payload']['headers']:
+            if header['name'] == 'Date':
+                msg_date_str = header['value']
+                msg_date = datetime.strptime(header['value'][:-6], "%a, %d %b %Y %H:%M:%S")
+            elif header['name'] == 'Subject':
+                subject = header['value']
+            elif header['name'] == 'From':
+                from_address = header['value']
+            elif header['name'] == 'To':
+                to_address = header['value']
+        
+        # Create a PDF and write the email content to it
+        pdf_buffer = io.BytesIO()
+        pdf_canvas = canvas.Canvas(pdf_buffer, pagesize=letter)
+        pdf_canvas.drawString(72, 740, f"Date: {msg_date_str}")
+        pdf_canvas.drawString(72, 800, f"Subject: {subject}")
+        pdf_canvas.drawString(72, 760, f"To: {to_address}")
+        pdf_canvas.drawString(72, 780, f"From: {from_address}")
+        pdf_canvas.drawString(72, 720, "Body:")
+        pdf_canvas.drawString(72, 700, message['snippet'])  # Using snippet for simplicity
+        pdf_canvas.save()
+
+        # Write the PDF content to the output file
+        output_pdf = os.path.join(destination_folder, "{}_{}.pdf".format(subject, msg_date.strftime("%Y%m%d_%H%M%S")))
+        with open(output_pdf, 'wb') as pdf_file:
+            pdf_file.write(pdf_buffer.getvalue())
+
+        print(f"Email saved as PDF: {output_pdf}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+def pdf_from_email2(service, msg_id, destination_folder, user_id='me'):
+    try:
+        message = service.users().messages().get(userId=user_id, id=msg_id).execute()
+
+        for header in message['payload']['headers']:
+            if header['name'] == 'Date':
+                msg_date_str = header['value']
+                msg_date = datetime.strptime(header['value'][:-6], "%a, %d %b %Y %H:%M:%S")
+            elif header['name'] == 'Subject':
+                subject = header['value']
+            elif header['name'] == 'From':
+                from_address = header['value']
+            elif header['name'] == 'To':
+                to_address = header['value']
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt=f"Subject: {subject}", ln=True, align='L')
+        pdf.cell(200, 10, txt=f"From: {from_address}", ln=True, align='L')
+        pdf.cell(200, 10, txt=f"To: {to_address}", ln=True, align='L')
+        pdf.cell(200, 10, txt=f"Date: {msg_date_str}", ln=True, align='L')
+        pdf.cell(200, 10, txt="Body:", ln=True, align='L')
+        #pdf.multi_cell(0, 10, txt=message['snippet'])
+        for part in message['payload']['parts']:
+            if 'body' in part and 'header' in part:
+                if part['mimeType'] == 'text/html':
+                    # Decode and add text part to the PDF
+                    body = base64.urlsafe_b64decode(part['body']['data'].encode('UTF-8')).decode('utf-8')
+                    pdf.multi_cell(0, 10, body)
+
+        # Save the PDF to the output file
+        output_pdf = os.path.join(destination_folder, "{}_{}.pdf".format(subject, msg_date.strftime("%Y%m%d_%H%M%S")))
+        pdf.output(output_pdf)
+
+        print(f"Email saved as PDF: {output_pdf}")
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+def search_and_get_attachment(service, subject, sender, destination_folder):
     """ Search for the desired messages and save the attachment file in the destination folder. 
     Parameters:
         service: Google auth service.
         subject: String.
         destination_folder: String. Path of the folder.
     """
-    print("Searching for mesages: {}".format(subject))
+    print("Searching for messages: {}".format(subject))
     # Specify your search criteria (e.g., subject, sender, etc.)
-    search_query = 'subject:{} has:attachment'.format(subject)
-    messages = get_messages_with_attachments(service, query=search_query)
+    # search_query = 'subject:YourSubject has:attachment from:example.com'
+    search_query = 'subject:{} has:attachment from:{}'.format(subject, sender)
+    messages = get_list_of_messages(service, query=search_query)
     print("\tFound {} messages...".format(len(messages)))
 
     for message in messages:
         msg_id = message['id']
         download_attachment(service, msg_id, destination_folder)
+
+
+def search_and_print_mail(service, subject, sender, destination_folder):
+    """ Search for the desired messages and save the attachment file in the destination folder. 
+    Parameters:
+        service: Google auth service.
+        subject: String.
+        destination_folder: String. Path of the folder.
+    """
+    print("Searching for messages: {}".format(subject))
+    # Specify your search criteria (e.g., subject, sender, etc.)
+    search_query = 'subject:{} from:{}'.format(subject, sender)
+    messages = get_list_of_messages(service, query=search_query)
+    print("\tFound {} messages...".format(len(messages)))
+
+    for message in messages:
+        msg_id = message['id']
+        pdf_from_email2(service, msg_id, destination_folder)
 
 
 if __name__ == '__main__':
@@ -108,8 +211,14 @@ if __name__ == '__main__':
     # perform the seach
     for i in list(settings.keys()):
         subject = settings[i]['subject']
+        sender = settings[i]['sender']
         destination_folder = settings[i]['destination_folder']
+        has_attachment = True if settings[i]['has_attachment'] == 'True' else False
 
         os.makedirs(destination_folder, exist_ok=True)
         # TODO: add time search, e.g. -w 3 in the last 3 weeks, or from the last time the script was run
-        search_and_get_attachment(service, subject, destination_folder)
+        if has_attachment:
+            # search_and_get_attachment(service, subject, sender, destination_folder)
+            pass
+        else:
+            search_and_print_mail(service, subject, sender, destination_folder)
