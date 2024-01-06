@@ -40,7 +40,8 @@ def authenticate_gmail():
     return creds
 
 
-def get_messages_with_attachments(service, user_id='me', query='has:attachment'):
+def get_list_of_messages(service, query, user_id='me'):
+    """ Get the messages that have an attachment and their IDs. """
     try:
         response = service.users().messages().list(userId=user_id, q=query).execute()
         messages = response.get('messages', [])
@@ -51,6 +52,13 @@ def get_messages_with_attachments(service, user_id='me', query='has:attachment')
 
 
 def download_attachment(service, msg_id, output_dir, user_id='me'):
+    """ Download the attachment in the specified folder. If the file has been already present, it skips the download.
+    Currently it fetches only PDFs.
+    Parameters:
+        service: Google auth service.
+        msg_id: String. Message id.
+        output_dir: String. Path of the folder where the attachment is saved.
+    """
     try:
         message = service.users().messages().get(userId=user_id, id=msg_id).execute()
         
@@ -71,17 +79,18 @@ def download_attachment(service, msg_id, output_dir, user_id='me'):
         print(f"An error occurred: {e}")
 
 
-def search_and_get_attachment(service, subject, destination_folder):
+def search_and_get_attachment(service, subject, sender, destination_folder):
     """ Search for the desired messages and save the attachment file in the destination folder. 
-    Paramters:
+    Parameters:
         service: Google auth service.
         subject: String.
         destination_folder: String. Path of the folder.
     """
-    print("Searching for mesages: {}".format(subject))
+    print("Searching for messages: {}".format(subject))
     # Specify your search criteria (e.g., subject, sender, etc.)
-    search_query = 'subject:{} has:attachment'.format(subject)
-    messages = get_messages_with_attachments(service, query=search_query)
+    # search_query = 'subject:YourSubject has:attachment from:example.com'
+    search_query = 'subject:{} has:attachment from:{}'.format(subject, sender)
+    messages = get_list_of_messages(service, query=search_query)
     print("\tFound {} messages...".format(len(messages)))
 
     for message in messages:
@@ -100,6 +109,7 @@ if __name__ == '__main__':
     # perform the seach
     for i in list(settings.keys()):
         subject = settings[i]['subject']
+        sender = settings[i]['sender']
         destination_folder = settings[i]['destination_folder']
 
         os.makedirs(destination_folder, exist_ok=True)
